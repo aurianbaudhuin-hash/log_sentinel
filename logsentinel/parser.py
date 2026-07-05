@@ -1,55 +1,68 @@
+"""Parsing of log lines in Apache 'combined log' format."""
+
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Iterator
+from typing import Iterator, Optional
+
+LOG_PATTERN = re.compile(
+    r"(?P<ip>\S+) \S+ \S+ \[(?P<timestamp>[^\]]+)\] "
+    r'"(?P<method>\S+) (?P<path>\S+) \S+" '
+    r"(?P<status>\d{3}) (?P<size>\d+|-)"
+)
+
+DATE_FORMAT = "%d/%b/%Y:%H:%M:%S %z"
 
 
 @dataclass
 class LogEntry:
     """Represents a single validated and typed log entry."""
+
     ip: str
     timestamp: datetime
     method: str
     path: str
     status: int
     size: int
-    
-    def print(self):
+
+    def print(self) -> None:
         """Print the entry in a human-readable format for debugging."""
-        print(f"IP: {self.ip}, Timestamp: {self.timestamp}, Method: {self.method}, Path: {self.path}, Status: {self.status}, Size: {self.size}")
-    
-    
-regex_sequence = r"(?P<ip>\S+) \S+ \S+ \[(?P<timestamp>[^\]]+)\] \"(?P<method>\S+) (?P<path>\S+) \S+\" (?P<status>\d{3}) (?P<size>\d+|-)"
+        print(
+            f"IP: {self.ip}, Timestamp: {self.timestamp}, "
+            f"Method: {self.method}, Path: {self.path}, "
+            f"Status: {self.status}, Size: {self.size}"
+        )
 
 
-def parse_line(line: str) -> LogEntry:
+def parse_line(line: str) -> Optional[LogEntry]:
     """Parse a single log line.
 
     Args:
         line: a raw line from the log file.
 
     Returns:
-        A LogEntry if the line is valid, otherwise None.
-        Never raises an exception: a malformed line is a normal
-        case, not a fatal error.
+        A LogEntry if the line is valid, otherwise None. Never
+        raises an exception: a malformed line is a normal case,
+        not a fatal error.
     """
-    match = re.match(regex_sequence, line)
+    match = LOG_PATTERN.match(line)
     if not match:
         return None
+
     groups = match.groupdict()
+
     try:
-        groups['timestamp'] = datetime.strptime(groups['timestamp'], "%d/%b/%Y:%H:%M:%S %z")
+        groups["timestamp"] = datetime.strptime(groups["timestamp"], DATE_FORMAT)
     except ValueError:
         return None
-    groups['status'] = int(groups['status'])
-    if groups['size'] == '-':
-        groups['size'] = 0
-    else:
-        groups['size'] = int(groups['size'])
+
+    groups["status"] = int(groups["status"])
+    groups["size"] = 0 if groups["size"] == "-" else int(groups["size"])
 
     return LogEntry(**groups)
 
-def parse_log_file(file_path: str) -> Iterator[tuple[LogEntry | None, str]]:
+
+def parse_log_file(file_path: str) -> Iterator[tuple[Optional[LogEntry], str]]:
     """Parse a log file line by line, without loading it into memory.
 
     Args:
@@ -64,8 +77,7 @@ def parse_log_file(file_path: str) -> Iterator[tuple[LogEntry | None, str]]:
             is not caught here: it's up to the caller (cli.py) to
             handle it and display a clear message to the user.
     """
-    with open(file_path, 'r') as file:
+    with open(file_path, "r", encoding="utf-8") as file:
         for line in file:
             log_entry = parse_line(line)
             yield log_entry, line
-
